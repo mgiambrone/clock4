@@ -28,7 +28,7 @@ before ordering. Part numbers marked "e.g." are examples, not verified picks.
 
 | # | Ref | Part | Qty | Unit $ | Line $ | Notes |
 |---|---|---|---|---|---|---|
-| 12 | J1 | USB-C receptacle, 6-pin power-only (e.g. TYPE-C-31-M-12 style) | 1 | ~0.10–0.25 | 0.20 | Through-hole shell pins help with hand soldering and strength. |
+| 12 | J1 | USB-C receptacle, 6-pin power-only (schematic uses the GCT USB4125 footprint; pick a clone with the same land pattern) | 1 | ~0.10–0.25 | 0.20 | Through-hole shell pins help with hand soldering and strength. |
 | 13 | R77–R78 | 5.1 kΩ CC pull-downs | 2 | ~0.002 | 0.01 | Required for C-to-C chargers to supply 5 V. |
 | 14 | F1 | Polyfuse ~500 mA, 1206 | 1 | ~0.03–0.05 | 0.05 | Optional. |
 | 15 | U12 | 3.3 V LDO, e.g. AP2112K-3.3 or ME6211C33, SOT-23-5 | 1 | ~0.05–0.15 | 0.10 | Load ~40–60 mA. |
@@ -73,3 +73,13 @@ Second MCU (STM32L010) and the date board, 10 date digits and their drivers,
 the hinge, 16 MB QSPI flash, the 32.768 kHz crystal and coin cell holder, the
 light-sensor DAC drive circuit, USB data/ESD parts, the date-board buttons, and
 the STM32L476 itself (replaced by a ~$0.62 part).
+
+## Changes from the schematic (rev 0.1)
+
+The schematic (`docs/schematic-notes.md`) adds a few small parts not listed
+above, all a cent or two each: R3 (oscillator EN pull-up), R4 (22 Ω oscillator
+series), R5 (/OE pull-up), R6/R7 (GPS ON/OFF and RESET pull-ups), R8 + L1
+(antenna bias), R9 + D5 (status LED), R10 + C10 (light sensor), C4–C10 MCU/GPS
+decoupling, and TP1/TP2 test pads. The colons need four colon resistors (R28,
+R29, R48, R49), so the segment resistor count is 74, not 72 + 4. None of this
+changes the ~$10 total by more than about $0.20.
