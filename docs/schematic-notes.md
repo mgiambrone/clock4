@@ -12,10 +12,11 @@ wires to follow.
 
 ## Checks done
 
-- KiCad 7 parses the file and exports a netlist: 142 parts, 195 nets.
+- KiCad 7 parses the file and exports a netlist: 143 parts, 197 nets.
 - `hardware/tools/check_netlist.py` compares KiCad's computed connectivity with
   what the script intended. It flags labels that miss a pin, typo'd nets, nets
-  with a single pin, inputs with no driver, and two outputs on one net. It
+  with a single pin, inputs with no driver, two outputs on one net, and parts
+  with no footprint (only Q1 is allowed, its part isn't chosen yet). It
   passes. I also broke a copy on purpose (renamed one label, moved another off
   its pin) to make sure it catches mistakes; it flagged both.
 - **Not done:** KiCad's own ERC. The `kicad-cli` that was installable here is
@@ -48,10 +49,10 @@ All alternate functions were checked against ST's pin database
 | 9 | PA2 | USART2_TX | GPS_RXD | Only needed if you ever send config commands to the GPS. |
 | 10 | PA3 | USART2_RX | GPS_TXD | NMEA at 9600. |
 | 11 | PA4 | TIM14_CH1 (PWM) | DISP_OE | Brightness. Active low. R5 pulls it up so the display stays dark during boot. |
-| 12 | PA5 | SPI1_SCK | SR_CLK | |
+| 12 | PA5 | SPI1_SCK | SR_CLK_MCU | → R100 33 Ω → SR_CLK. |
 | 13 | PA6 | TIM3_CH1 (input capture) | GPS_PPS | |
 | 14 | PA7 | SPI1_MOSI | SR_DATA | |
-| 15 | PB0 (PB1, PB2, PA8 bonded) | TIM3_CH3 (output compare) | SR_LATCH | Same timer as the PPS capture, so the latch edge is hardware-timed against the same counter. **Firmware must leave PB1/PB2/PA8 as inputs.** |
+| 15 | PB0 (PB1, PB2, PA8 bonded) | TIM3_CH3 (output compare) | SR_LATCH_MCU | → R101 33 Ω → SR_LATCH. Same timer as the PPS capture, so the latch edge is hardware-timed against the same counter. **Firmware must leave PB1/PB2/PA8 as inputs.** |
 | 16 | PA11 | GPIO out | LED_STATUS | Through R9 (1 k) to D5. |
 | 17 | PA12 | GPIO, open-drain | GPS_RESET | R7 pull-up. |
 | 18 | PA13 | SWDIO | SWDIO | |
@@ -70,8 +71,19 @@ This is the main firmware gotcha with this package.
   goes out first.
 - SRCLK, RCLK and /OE are common to all nine. /SRCLR is tied to +5V.
 - QA–QG → segments A–G, QH → DP, each through its own 470 Ω (Rn1–Rn8 for digit
-  n). That's about 5.7 mA per segment, assuming ~2.0 V red LEDs and ~0.3 V
-  output drop, or ≤ 46 mA per '595 with all segments on.
+  n). That's about 5.7–6.4 mA per LED, depending on the LED's Vf (1.8–2.0 V)
+  and the output drop (0.2–0.3 V). With every segment on, that's ≤ ~51 mA per
+  '595, and ~51–58 mA for U12/U14, which drive 9 LEDs. The package limit is
+  70 mA.
+- **Total current:** all 74 LEDs on is ~0.42–0.47 A from 5 V, plus ~50–100 mA on
+  the 3.3 V side. A normal time display peaks around 0.42 A. The firmware must
+  run any all-segments self-test at reduced /OE duty (≤ 50%).
+- **SR_CLK and SR_LATCH** each drive nine inputs along the whole display, so
+  they get 33 Ω series resistors right at the MCU (R100, R101; nets
+  SR_CLK_MCU/SR_LATCH_MCU on the MCU side). Route each as one daisy-chained
+  trace with solid ground underneath. In firmware, use medium or high GPIO
+  speed on PA5/PB0, not "very high". SR_DATA only drives U11 and needs no
+  resistor.
 - **Colons:** QH of U12 drives the two LEDs between DS2 and DS3 (D1, D2 via R28,
   R29), and QH of U14 drives the two between DS4 and DS5 (D3, D4 via R48, R49).
   DS2 and DS4's own DP pins are left unconnected. DS6's DP is the decimal point
@@ -99,19 +111,33 @@ This is the main firmware gotcha with this package.
 
 ## GPS
 
-- U3 ATGM336H-5N31 on the `RF_GPS:ublox_MAX` footprint. The ATGM336H pinout
-  matches the u-blox MAX layout pin for pin (GND 1/10/12, TXD 2, RXD 3, PPS 4,
-  VBAT 6, VCC 8, RESET 9, RF_IN 11, VCC_RF 14, SDA/SCL 16/17). I matched the
-  pins but haven't compared pad dimensions with the ATGM datasheet drawing.
-- VBAT (pin 6) is tied to VCC. There's no backup supply, so every power-up is
-  a cold start (decided in the analysis).
-- ON/OFF (pin 5) is pulled high by R6 (active low). RESET is pulled high by R7
-  and the MCU can pull it low.
-- **Active antenna feed:** VCC_RF → R8 10 Ω → L1 47 nH → RF_IN line. These are
-  typical values for this kind of module, **not checked against the ATGM336H
-  reference design**. I couldn't open the datasheet PDF from this environment.
-  Check before ordering. If the datasheet says RF_IN isn't DC-blocked inside
-  the module, the circuit needs changing.
+- U3 ATGM336H-5N31 on the `RF_GPS:ublox_MAX` footprint. The ATGM336H-5N user
+  manual (v1.2, section 1) says the module "can directly replace u-blox MAX
+  series modules", and its pin table (section 2.4) matches the symbol: GND
+  1/10/12, TXD 2, RXD 3, 1PPS 4, ON/OFF 5, VBAT 6, NC 7, VCC 8, nRESET 9, RF_IN
+  11, NC 13, VCC_RF 14, reserved 15/18, SDA/SCL 16/17. Copy of the manual:
+  https://raw.githubusercontent.com/Edragon/GSM_GPRS_GPS/master/GPS_DOC/ATGM336H-5N%20IC%20datasheet.pdf
+- VBAT (pin 6) is tied to VCC. The manual allows 1.5–3.6 V there. There's no
+  backup supply, so every power-up is a cold start (decided in the analysis).
+  The manual's reference circuit puts a 3 V cell here instead; that's the
+  upgrade path.
+- ON/OFF (pin 5, active low) is pulled high by R6. The manual's circuit leaves
+  it open, so R6 is belt-and-braces. nRESET (manual: "leave floating if
+  unused") has a pull-up, R7, and the MCU can pull it low.
+- VCC is specified at 3.3 V ±10%, 100 mA. The manual asks for a low-ripple LDO
+  (< 50 mVpp), a ground pour under the module, and no fast digital signals
+  near it. So keep the SPI chain and /OE PWM traces away from U3 and the RF
+  trace.
+- **Active antenna feed (checked against manual section 2.7.1):** VCC_RF → L1
+  47 nH → RF_IN, with nothing else. The module handles antenna power, open and
+  short detection internally (current limited to 50 mA) and reports
+  `$GPTXT ... ANTENNA OK/OPEN/SHORT` over the UART. R8 is now 0 Ω; it was 10 Ω
+  in rev 0.1, and the pad is kept only as an option. For L1, use an RF-rated
+  0603 inductor whose self-resonant frequency is well above 1.6 GHz.
+- Optional, not on the schematic: an ultra-low-capacitance RF ESD diode
+  (≤ 0.3 pF, e.g. Infineon ESD0P2RF-02LS) from GPS_RF to GND at J2, since the
+  antenna cable is handled. The review split on whether it's needed. The
+  module is rated 2 kV HBM.
 - RF trace from U3 pin 11 to J2: keep it short, 50 Ω coplanar waveguide, with
   ground stitching. That's a layout task.
 - TP1 on PPS, TP2 on SR_LATCH: put a scope on both to see the latch-to-PPS
@@ -121,11 +147,18 @@ This is the main firmware gotcha with this package.
 
 - J1 is a 6-pin power-only USB-C receptacle (GCT USB4125 footprint). R1/R2
   5.1 kΩ on CC1/CC2.
-- F1 is a 500 mA hold polyfuse, then +5V.
+- F1 is a 750 mA hold polyfuse (e.g. 1206L075-class), then +5V. It was 500 mA
+  in rev 0.1, which sat at the worst-case load.
 - U2 AP2112K-3.3 makes +3V3 (MCU, GPS, oscillator; ~40–60 mA). C2 1 µF in,
   C3 10 µF out.
-- The '595s and LEDs run straight from +5V. C20/C21 10 µF bulk, plus 100 nF
-  per '595 (C11–C19).
+- The '595s and LEDs run straight from +5V. Capacitance on VBUS is kept near
+  the USB limit for sinks (10 µF): C1 4.7 µF at the connector, C2 1 µF at the
+  LDO, one 10 µF (C20) for the display's /OE PWM load steps, and 100 nF per
+  '595 (C11–C19). That's ~16.6 µF nominal, roughly 10 µF after DC-bias
+  derating. That's knowingly marginal; it's fine on chargers. A soft-start load
+  switch would be the fix if it ever upsets a PC port.
+- The 3.3 V side adds C3 10 µF, C5 4.7 µF, C8 10 µF behind the LDO, which
+  current-limits their charging.
 - No TVS/ESD on VBUS. Optional; add one if the clock will be plugged and
   unplugged a lot.
 
@@ -138,10 +171,37 @@ This is the main firmware gotcha with this package.
 ## Open before PCB layout
 
 1. Check the 7-segment pinout against the purchased part.
-2. Check the ATGM336H active-antenna circuit and pad sizes against its
-   datasheet.
+2. ~~Check the ATGM336H active-antenna circuit and pad sizes.~~ Done: the
+   circuit and footprint compatibility were confirmed from the manual (see GPS).
+   Before layout, still glance at the manual's land-pattern drawing against
+   `ublox_MAX`.
 3. Pick the oscillator part (and TCXO option) and check its pin 1 function.
 4. Pick the phototransistor (or drop it).
 5. Run KiCad's ERC once in the GUI.
-6. Ideally, check items 1 and 2 on a breadboard first: an ATGM336H breakout
-   plus one digit and one 74HCT595.
+6. Ideally, check item 1 on a breadboard first, together with the PPS/NMEA
+   behaviour: an ATGM336H breakout plus one digit and one 74HCT595.
+
+## Review log
+
+**2026-10-04, multi-agent review of rev 0.1.** Six reviewers covered the MCU,
+display, GPS, power, footprint-to-symbol pin matching and timing. Two
+independent skeptics then tried to refute each finding. Out of 19 findings, 7
+were confirmed by both, 3 split and 9 refuted. Changes made:
+
+- **U2 had no footprint** (generator bug: an empty footprint argument overwrote
+  the library default). Fixed in the generator, and `check_netlist.py` now
+  fails on any part without a footprint (only Q1 is exempt).
+- **5 V current was undercounted** (the DPs and colons were missing). F1 is now
+  750 mA, and the figures above are corrected.
+- **BOM designators didn't match the schematic.** `bom-draft.md` is now
+  generated from the netlist.
+- **VBUS capacitance was over the USB sink limit.** Cut from ~32 µF to ~17 µF
+  nominal; the residual is documented as accepted.
+- **SR_CLK/SR_LATCH fan-out:** added the 33 Ω series resistors R100/R101.
+- **Antenna feed** checked against the ATGM336H-5N manual: R8 is now 0 Ω.
+  The manual also confirms u-blox MAX drop-in compatibility.
+- Split, not acted on: an RF ESD diode on GPS_RF (listed as optional above).
+- Refuted, for reference: missing notes on the bonded pins PB9/PA15 (they were
+  already covered), SPI NSS on PA4 (software NSS is fine), status LED drive,
+  a VBUS drop below 4.5 V (an edge case), PPS re-phasing racing the SPI shift
+  (a firmware detail), and NMEA timing needing GPS_RXD (it's already wired).

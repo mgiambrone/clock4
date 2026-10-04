@@ -317,9 +317,13 @@ Why this fits the 1 ms goal well:
 - **HCT, not HC:** the '595s run at 5 V for LED headroom, and HCT inputs accept
   3.3 V logic (VIH = 2.0 V). Plain 74HC595 at 5 V needs 3.5 V, so it's marginal
   from a 3.3 V MCU.
-- **Current:** at ~5 mA per segment static (as bright as ~45 mA peak on a 1/9
-  multiplex), a digit is ≤40 mA, within the '595's 70 mA package limit. Worst case
-  is all digits showing "8." = ~360 mA from 5 V. Fine for USB.
+- **Current:** at ~5.7–6.4 mA per segment static (as bright as ~50 mA peak on a
+  1/9 multiplex), a digit is ≤ ~51 mA, within the '595's 70 mA package limit. The
+  two '595s that also drive colon LEDs carry 9 LEDs (~51–58 mA). Worst case is
+  every LED on (74 of them, including decimal points and colons): ~0.42–0.47 A
+  from 5 V. A normal time display peaks around 0.42 A ("08:08:08.888"). See
+  Power below. *(Corrected after the schematic review; the first draft said
+  ~360 mA, which left out the decimal points, the colons and the low-Vf case.)*
 - **Colons:** the DP outputs of digits 2 (H units) and 4 (M units) aren't needed
   as decimal points, so wire those to the colon LEDs. No extra chip needed.
 
@@ -409,7 +413,7 @@ stocks it; ask when quoting, or consign the part.
   3. Variants: LCSC lists 5N11, 5N31 and 5N71. One listing implies PPS is a
      5N11 feature, but the 5N-series datasheet shows a 1PPS pin for the series.
      **Confirm the PPS pin on the exact variant's datasheet before ordering.**
-  4. Active-antenna bias: check the datasheet's reference circuit (antenna supply
+  4. ~~Active-antenna bias~~ resolved: the ATGM336H-5N manual (section 2.7.1) shows only a 47 nH inductor from VCC_RF to RF_IN. See schematic-notes.md. (Original note: check the reference circuit for the antenna supply
      pin, series resistor/inductor).
 - A ~$3–5 ATGM336H breakout with a PPS pin (sold on AliExpress etc.) is a cheap
   way to answer all four questions with a dev board before committing to a PCB.
@@ -434,12 +438,15 @@ coplanar waveguide. PCBWay can do controlled impedance, but a short trace on
 
 - USB-C receptacle, **power-only 6-pin** type (~$0.10–0.25), with 2× 5.1 kΩ
   pull-downs on CC1/CC2 so C-to-C chargers supply 5 V.
-- Optional 500 mA polyfuse.
+- 750 mA hold polyfuse (500 mA is too close to the worst-case load).
 - 3.3 V LDO for MCU, GPS and oscillator (~40–60 mA total). AP2112K-3.3 or
   ME6211C33 (~$0.05–0.15). An AMS1117 also works but is bigger and wastes more
   quiescent current.
-- '595s and LEDs run directly from 5 V. Total worst case is ≲ 450 mA, so any USB
-  port or phone charger is fine.
+- '595s and LEDs run directly from 5 V. Worst case with every LED lit plus the
+  3.3 V side is ~0.47–0.53 A. That's above the 500 mA a USB 2.0 port (or a USB-C
+  port offering only default current) has to supply, so use a phone charger
+  (≥1 A), and have the firmware cap /OE duty for any all-segments self-test. The
+  normal time display stays below that.
 - Usual decoupling: 100 nF per IC and 10 µF bulk at the connector and LDO.
 
 ### Firmware outline (for later, not written yet)

@@ -23,6 +23,8 @@ import gen_schematic  # noqa: E402
 
 # Nets that legitimately have one pin: test points are the only exceptions.
 SINGLE_OK = set()
+# Parts allowed to have no footprint yet (part not chosen)
+NO_FOOTPRINT_OK = {"Q1"}
 
 
 def parse(path):
@@ -80,6 +82,11 @@ def main(path):
     for net in got:
         if net not in want and not net.startswith("unconnected-"):
             errors.append(f"unexpected net {net}: {sorted(got[net])}")
+
+    comps = re.findall(r'\(comp \(ref "([^"]+)"\)(.*?)\(libsource', open(path).read(), re.S)
+    for ref, body in comps:
+        if "(footprint " not in body and ref not in NO_FOOTPRINT_OK:
+            errors.append(f"{ref} has no footprint")
 
     print(f"{len(got)} nets, {len(sheet.refs)} parts checked")
     for e in errors:

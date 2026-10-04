@@ -192,6 +192,7 @@ class Sheet:
         self.pwr_n = 0
         self.refs = set()
         self.conns = {}  # ref -> {pin: net}, for check_netlist.py
+        self.footprints = {}  # ref -> footprint, for check_netlist.py
 
     def _need(self, lib_id):
         if lib_id not in self.lib_ids:
@@ -258,6 +259,11 @@ class Sheet:
         extra = set(conns) - set(pins)
         assert not missing and not extra, (ref, sorted(missing), sorted(extra))
         u = uid("sym", ref)
+        if not footprint:
+            # fall back to the library's default footprint instead of blanking it
+            fm = re.search(r'\(property "Footprint" "([^"]*)"', get_symbol(lib_id))
+            footprint = fm.group(1) if fm else ""
+        self.footprints[ref] = footprint
         props = [("Reference", ref), ("Value", value), ("Footprint", footprint), ("Datasheet", "~")]
         props += list((fields or {}).items())
         sym = get_symbol(lib_id)
@@ -342,9 +348,9 @@ def build():
            "Connector_USB:USB_C_Receptacle_GCT_USB4125-xx-x_6P_TopMnt_Horizontal")
     r(s, "R1", "5.1k", 65, 70, "CC1", "GND")
     r(s, "R2", "5.1k", 75, 70, "CC2", "GND")
-    s.part("Device:Polyfuse", "F1", "500mA hold", 65, 45, {"1": "VBUS", "2": "+5V"},
+    s.part("Device:Polyfuse", "F1", "750mA hold", 65, 45, {"1": "VBUS", "2": "+5V"},
            "Fuse:Fuse_1206_3216Metric")
-    c(s, "C1", "10u", 80, 45, "+5V", fp=FP_C_BULK)
+    c(s, "C1", "4.7u", 80, 45, "+5V", fp=FP_C_BULK)
     s.part("Regulator_Linear:AP2112K-3.3", "U2", "AP2112K-3.3", 115, 50,
            {"1": "+5V", "2": "GND", "3": "+5V", "4": "NC", "5": "+3V3"})
     c(s, "C2", "1u", 100, 65, "+5V")
@@ -366,10 +372,10 @@ def build():
         "9": "GPS_RXD",       # PA2 = USART2_TX -> GPS RXD
         "10": "GPS_TXD",      # PA3 = USART2_RX <- GPS TXD
         "11": "DISP_OE",      # PA4 = TIM14_CH1 PWM -> /OE
-        "12": "SR_CLK",       # PA5 = SPI1_SCK
+        "12": "SR_CLK_MCU",   # PA5 = SPI1_SCK, 33R series (R100) to the chain
         "13": "GPS_PPS",      # PA6 = TIM3_CH1 input capture
         "14": "SR_DATA",      # PA7 = SPI1_MOSI
-        "15": "SR_LATCH",     # PB0 = TIM3_CH3 output compare (PB1/PB2/PA8 bonded: keep them as inputs)
+        "15": "SR_LATCH_MCU", # PB0 = TIM3_CH3 output compare (PB1/PB2/PA8 bonded: keep them as inputs)
         "16": "LED_STATUS",   # PA11 GPIO
         "17": "GPS_RESET",    # PA12 GPIO, open-drain
         "18": "SWDIO",        # PA13
@@ -403,7 +409,7 @@ def build():
     c(s, "C9", "100n", 35, 250, "+3V3")
     r(s, "R6", "10k", 25, 280, "+3V3", "GPS_ONOFF")
     r(s, "R7", "10k", 35, 280, "+3V3", "GPS_RESET")
-    r(s, "R8", "10", 120, 245, "VCC_RF", "ANT_BIAS")
+    r(s, "R8", "0", 120, 245, "VCC_RF", "ANT_BIAS")  # ATGM336H-5N manual 2.7.1 shows only L1; pad kept as an option
     s.part("Device:L", "L1", "47nH", 120, 285, {"1": "ANT_BIAS", "2": "GPS_RF"},
            "Inductor_SMD:L_0603_1608Metric")
     s.part("Connector:Conn_Coaxial", "J2", "u.FL (active antenna)", 140, 275, {"1": "GPS_RF", "2": "GND"},
@@ -433,10 +439,14 @@ def build():
     # ---------------- Display ----------------
     s.text(190, 22, "DISPLAY: HH:MM:SS.mmm, 9 digits, each statically driven by a 74HCT595 (5 V).", 3)
     s.text(190, 28, "Chain: SR_DATA -> U11 -> U12 ... -> U19. All latch together on SR_LATCH. /OE = PWM brightness.", 2)
-    s.text(190, 33, "Segment resistors 470R: (5 V - ~2.0 V LED - ~0.3 V drop) / 470 = ~5.7 mA per segment, <= 46 mA per 595.", 2)
+    s.text(190, 33, "Segment resistors 470R: ~5.7-6.4 mA per LED. 8 LEDs per 595 (~46-51 mA); U12/U14 drive 9 (~51-58 mA). Limit 70 mA.", 2)
+    s.text(190, 38, "All 74 LEDs on: ~0.42-0.47 A from 5 V. Firmware must cap /OE duty for an all-segments self-test.", 2)
     r(s, "R5", "10k", 560, 22, "+3V3", "DISP_OE")  # keeps display dark until MCU drives /OE
-    for i in range(2):
-        c(s, f"C2{i}", "10u", 540 + i * 10, 22, "+5V", fp=FP_C_BULK)
+    # Bulk for the /OE PWM load steps. Kept small: total on VBUS stays near the USB 10 uF limit.
+    c(s, "C20", "10u", 540, 22, "+5V", fp=FP_C_BULK)
+    # 33R series resistors at the MCU for the two nets that fan out to all nine '595s
+    r(s, "R100", "33", 175, 150, "SR_CLK_MCU", "SR_CLK")
+    r(s, "R101", "33", 182.62, 150, "SR_LATCH_MCU", "SR_LATCH")
 
     col_w, row_h = 130, 110
     for n in range(1, 10):
