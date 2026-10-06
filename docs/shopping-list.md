@@ -29,8 +29,8 @@ over about $50 in the US. Mouser stocks most of the same parts.
 |---|---|---|---|
 | 1–2 | **ATGM336H GPS breakout with a PPS pin**, antenna included | 5–12 | Check the listing photos for a pin labelled PPS. Many have only VCC/GND/TX/RX. Amazon examples: [DORHEA ATGM336H](https://www.amazon.com/Dual-Mode-Satellite-Positioning-Navigator-Replacement/dp/B0GSZY9ZYB) (mentions PPS pins). |
 | 1 | Active GPS antenna, SMA, 3–5 m cable, plus a u.FL→SMA pigtail if the breakout uses u.FL | 6–10 | For indoor testing near a window. Skip it if the breakout's antenna locks where you test. |
-| 1 pack | **0.56" single-digit 7-segment, common cathode, red ("5161AS")** | 6–8 for 10 | Generic. Checking its pinout is one of the main breadboard jobs. A name-brand alternative is Kingbright SC56-11SRWA (DigiKey, ~$2 each, [listed as obsolete](https://www.digikey.com/en/products/detail/kingbright/SC56-11SRWA/2163730), so treat it as a reference part). |
-| 2–3 | Full-size breadboards + jumper wire kit | 10–15 | Nine digits need roughly three boards. |
+| 2 | **Kingbright DC56-11EWA** 0.56" dual digit, common cathode, 18 pins | 3.65 each | **Rev 0.2 change:** buy these in Order A (Mouser/DigiKey, [DigiKey listing](https://www.digikey.com/en/products/detail/kingbright/DC56-11EWA/3084376)), not generic duals: most generic 2-digit parts are 10-pin multiplexed and won't work. Two duals = four digits, plenty for the breadboard. At 10+ they drop to ~$2.13, so if you're sure you'll build the PCB, buy 10 now (5 for the board + the breadboard pair + spares). |
+| 2 | Full-size breadboards + jumper wire kit | 10–15 | Four digits fit on two boards. |
 | 1 | USB-serial adapter, 3.3 V (CP2102 or CH340) | 5 | To watch NMEA from the GPS on its own. (The Nucleo's ST-Link serial can do it too.) |
 | 1 | **Logic analyser**, 8 channel 24 MHz "Saleae clone" | 10–15 | Works with free PulseView/sigrok. This is how you measure PPS → RMC timing and PPS → latch delay. |
 
@@ -44,7 +44,8 @@ You already have an ST-Link and the Mk IV. Use the Mk IV as a visual reference
 | Bare PCB (+ stencil if you'll reflow) | **PCBWay** (your choice) | 2-layer, 1.6 mm, ~150 × 40 mm. Get a quote with and without assembly; at 1–5 boards, assembly fees usually exceed the parts. |
 | ATGM336H-5N31 module, STM32G030F6P6, 74HCT595 (SOIC), passives, USB-C, AP2112K | **LCSC** | Cheapest and stocks everything in the BOM (C90770, C724040…). Shipping to the US costs ~$10–25, and I can't predict current tariffs or brokerage fees, so check at checkout. |
 | Same parts, faster/simpler | DigiKey / Mouser | Costs more for the Chinese parts (ATGM336H may not be stocked; LCSC is the reliable source). |
-| 0.56" digits, antenna, 3 mm LEDs | Amazon/AliExpress, or reuse spares from stage 1 | Buy digits from the same seller as the breadboard batch once you've confirmed their pinout. |
+| DC56-11EWA displays (×5) | Mouser / DigiKey | ~$2.13–2.50 each at 10+. Not at LCSC under this name as far as I know. |
+| Antenna, 3 mm LEDs | Amazon/AliExpress, or reuse spares from stage 1 | |
 | Polyfuse 750 mA, inductor 47 nH (RF-rated), oscillator | LCSC or DigiKey | Pick these when finalising the BOM. |
 
 If you use PCBWay assembly, they source parts themselves (or accept parts you
@@ -55,7 +56,7 @@ send it.
 
 1. Place orders A and B together; they arrive in roughly a week (AliExpress
    2–3 weeks).
-2. Breadboard: GPS alone → one digit + '595 → MCU + 3 digits (see the
+2. Breadboard: GPS alone → one digit + '595 → MCU + 4 digits (see the
    breadboard plan).
 3. Update the schematic with whatever the breadboard teaches (digit pinout,
    anything odd about the GPS).

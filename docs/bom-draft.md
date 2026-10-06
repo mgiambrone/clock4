@@ -1,8 +1,8 @@
 # Draft BOM: cheap GPS ms wall clock
 
 This is for the design in `analysis.md` and the schematic in
-`hardware/gpsclock/` (rev 0.1, after review): STM32G030F6, ATGM336H, 9×
-74HCT595 static drive, 9 single 0.56" digits, USB-C power only.
+`hardware/gpsclock/` (rev 0.2): STM32G030F6, ATGM336H, 10× 74HCT595 static
+drive, five 0.56" dual digits (HH:MM:SS.mmmm), two buttons, USB-C power only.
 
 **Reference designators match the schematic.** They were generated from the
 KiCad netlist. If the schematic changes, regenerate this list from it (`kicad-cli
@@ -24,11 +24,11 @@ numbers marked "e.g." are examples, not verified picks.
 | — | 1 | Active GPS patch antenna, 3 m cable, SMA, plus a u.FL→SMA bulkhead pigtail | off-board | ~2–4 | 3.00 | AliExpress-type items. |
 | L1 | 1 | 47 nH RF inductor, SRF well above 1.6 GHz (e.g. Murata LQW18AN47N) | 0603 | ~0.05 | 0.05 | Per the ATGM336H-5N manual, section 2.7.1. |
 | R8 | 1 | 0 Ω | 0603 | ~0.002 | 0.00 | Option pad in the antenna feed. |
-| U11–U19 | 9 | 74HCT595 (must be **HCT**) | SOIC-16 | ~0.10–0.20 | 1.35 | |
-| DS1–DS9 | 9 | 0.56" single-digit 7-segment, common cathode, red, "5161AS" pinout | 2×5, 15.24 mm rows | ~0.15–0.30 | 2.00 | Check the pinout of the part you buy. |
+| U11–U20 | 10 | 74HCT595 (must be **HCT**) | SOIC-16 | ~0.10–0.20 | 1.50 | |
+| DS1–DS5 | 5 | **Kingbright DC56-11EWA**, 0.56" dual digit, common cathode, red, 18 pins | DA56-11 (2×9, 15.24 mm rows) | 3.64 ✓ (qty 1), 2.13 ✓ (qty 10, Mouser) | 12.00 | In stock at Mouser/DigiKey (Oct 2026). Generic 10-pin multiplexed duals won't work. This is now the most expensive part. |
 | D1–D4 | 4 | Red LED, 3 mm | THT | ~0.02 | 0.08 | Colons. |
-| R11–R18, R21–R29, R31–R38, R41–R49, R51–R58, R61–R68, R71–R78, R81–R88, R91–R98 | 74 | 470 Ω | 0603 | ~0.002 | 0.15 | Segments, DPs and colons. R28/R29 and R48/R49 feed the colon LEDs. |
-| R100, R101 | 2 | 33 Ω | 0603 | ~0.002 | 0.01 | Series resistors on SR_CLK / SR_LATCH. |
+| R11–R18, R21–R29, R31–R38, R41–R49, R51–R58, R61–R68, R71–R78, R81–R88, R91–R98, R101–R108 | 82 | 470 Ω | 0603 | ~0.002 | 0.17 | Segments, DPs and colons. R28/R29 and R48/R49 feed the colon LEDs. |
+| R120, R121 | 2 | 33 Ω | 0603 | ~0.002 | 0.01 | Series resistors on SR_CLK / SR_LATCH. |
 
 ## Power
 
@@ -38,10 +38,10 @@ numbers marked "e.g." are examples, not verified picks.
 | R1, R2 | 2 | 5.1 kΩ | 0603 | ~0.002 | 0.01 | CC pull-downs. |
 | F1 | 1 | Polyfuse, **750 mA hold** (e.g. 1206L075-class) | 1206 | ~0.03–0.06 | 0.05 | 500 mA was too close to the worst-case load. |
 | U2 | 1 | AP2112K-3.3 | SOT-23-5 | ~0.05–0.15 | 0.10 | |
-| C3, C8, C20 | 3 | 10 µF | 0805 | ~0.01 | 0.03 | LDO out, GPS, display bulk. |
+| C3, C8, C21 | 3 | 10 µF | 0805 | ~0.01 | 0.03 | LDO out, GPS, display bulk. |
 | C1, C5 | 2 | 4.7 µF | 0805 | ~0.01 | 0.02 | USB input, MCU. |
 | C2 | 1 | 1 µF | 0603 | ~0.005 | 0.01 | LDO input. |
-| C4, C6, C7, C9–C19 | 14 | 100 nF | 0603 | ~0.002 | 0.03 | Decoupling, NRST, light-sensor filter. |
+| C4, C6, C7, C9–C20 | 15 | 100 nF | 0603 | ~0.002 | 0.03 | Decoupling, NRST, light-sensor filter. |
 
 ## Small stuff / optional
 
@@ -53,7 +53,7 @@ numbers marked "e.g." are examples, not verified picks.
 | D5 | 1 | Green LED | 0603 | ~0.01 | 0.01 | Status. |
 | J3 | 1 | 1×5 pin header 2.54 mm (SWD) | THT | ~0.03 | 0.03 | |
 | J4 | 1 | 1×3 pin header 2.54 mm (debug UART) | THT | ~0.02 | 0.02 | Optional. |
-| SW1 | 1 | 6 mm tactile switch | THT | ~0.03 | 0.03 | Optional. |
+| SW1, SW2 | 2 | 6 mm tactile switch | THT | ~0.03 | 0.06 | Brightness and mode. |
 | Q1 | 1 | Phototransistor | **TBD** | ~0.05–0.10 | 0.10 | Optional. Part and footprint not chosen yet. |
 | TP1, TP2 | 2 | Test pads | 1 mm pad | 0 | 0.00 | PPS and latch. |
 | — | — | GPS backup cell on VBAT (instead of tying it to VCC) | — | ~0.30–1.00 | — | Optional, not in the total. |
@@ -63,14 +63,16 @@ numbers marked "e.g." are examples, not verified picks.
 
 | Variant | Approx. total |
 |---|---|
-| As listed (0.56" digits, plain oscillator, antenna) | **≈ $10** |
-| With TCXO | ≈ $10.70 |
+| As listed (5 DC56-11 duals at the 10-off price, plain oscillator, antenna) | **≈ $20** |
+| Same, buying the duals one at a time (~$3.65 each) | ≈ $27 |
+| With TCXO | add ≈ $0.70 |
+| Rev 0.1 for comparison (nine generic single digits) | ≈ $10 |
 | Without the antenna (if you already have one) | subtract ~$3 |
 
 These exclude:
 
-- **PCB:** 2-layer, 1.6 mm, about 150 × 40 mm for nine 0.56" digits plus
-  colons. PCBWay pricing jumps above 100 × 100 mm. I don't have a current quote;
+- **PCB:** 2-layer, 1.6 mm, about 150–160 × 40 mm for five 0.56" duals
+  (each ~25 mm wide) plus colon gaps. PCBWay pricing jumps above 100 × 100 mm. I don't have a current quote;
   expect roughly $10–30 for 5 boards plus shipping, but check.
 - **Assembly**, if you use PCBWay assembly: setup, stencil and handling fees tend
   to dominate at 1–5 boards. Everything here is hand-solderable (smallest pitch
@@ -78,7 +80,7 @@ These exclude:
   PCB + stencil and assembling yourself is likely cheapest.
 - **Enclosure / mounting:** front filter (e.g. red-tinted acrylic) and hanger.
 - Shipping and tax.
-- **Power supply:** use a phone charger (≥ 1 A). The worst-case load (~0.5 A)
+- **Power supply:** use a phone charger (≥ 1 A). The worst-case load (~0.55–0.6 A)
   is above what a PC USB 2.0 port has to supply.
 
 ## Parts removed compared with the Mk IV (for reference)
