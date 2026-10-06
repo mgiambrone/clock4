@@ -1,0 +1,685 @@
+<title>Precision Clock Simulator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one column. The clock's acrylic panel is the hero and stays dark in both
+   themes (it is a physical object); controls sit under it like the clock's back panel. */
+:root {
+  --bg: #e9ecee;
+  --surface: #f7f8f9;
+  --line: #cfd4d8;
+  --fg: #1b2024;
+  --muted: #5d666d;
+  --accent: #c0291c;          /* LED red, for UI accents */
+  --accent-ink: #ffffff;
+  --panel: #120b0a;           /* smoked acrylic, same in both themes */
+  --panel-edge: #2a1d1b;
+  --housing: #1b1312;
+  --seg-off: #2a1513;
+  --seg-on: #ff3b1f;
+  --btn-cap: #2b3034;
+  --btn-cap-hi: #3a4045;
+  --btn-ink: #e9ecee;
+  --warn-bg: #fff2d6;
+  --warn-fg: #6b4a00;
+  --font-display: "Barlow Semi Condensed", "Arial Narrow", system-ui, sans-serif;
+  --font-body: "Barlow", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #14171a; --surface: #1c2024; --line: #2e3439; --fg: #e4e7ea; --muted: #9aa3aa;
+    --accent: #ff5a43; --accent-ink: #1a0d0b; --btn-cap: #343a3f; --btn-cap-hi: #454c52;
+    --btn-ink: #eef0f2; --warn-bg: #3a2e12; --warn-fg: #f3d58a; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #14171a; --surface: #1c2024; --line: #2e3439; --fg: #e4e7ea; --muted: #9aa3aa;
+  --accent: #ff5a43; --accent-ink: #1a0d0b; --btn-cap: #343a3f; --btn-cap-hi: #454c52;
+  --btn-ink: #eef0f2; --warn-bg: #3a2e12; --warn-fg: #f3d58a; color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  background: var(--bg); color: var(--fg);
+  font-family: var(--font-body); font-size: 15px; line-height: 1.5;
+}
+.wrap { max-width: 920px; margin: 0 auto; padding-inline: 16px; padding-block: 20px 48px;
+  display: flex; flex-direction: column; gap: 18px; }
+
+header h1 { font-family: var(--font-display); font-weight: 700; font-size: 1.6rem; letter-spacing: .01em;
+  margin: 0; text-wrap: balance; }
+header p { margin: 4px 0 0; color: var(--muted); max-width: 62ch; }
+
+.banner { background: var(--warn-bg); color: var(--warn-fg); border-radius: 8px; padding: 8px 12px;
+  display: flex; gap: 12px; align-items: center; flex-wrap: wrap; font-size: .92rem; }
+.banner button { margin-left: auto; }
+
+/* The clock */
+.clock { background: var(--panel); border: 1px solid var(--panel-edge); border-radius: 14px;
+  padding: clamp(10px, 3vw, 22px); box-shadow: inset 0 1px 0 rgba(255,255,255,.04), 0 10px 30px rgba(0,0,0,.25); }
+.clock svg { display: block; width: 100%; height: auto; max-width: 100%; }
+.seg { fill: var(--seg-off); }
+.seg.on { fill: var(--seg-on); fill-opacity: var(--on-alpha, 1); }
+.housing { fill: var(--housing); }
+.clock.flash svg { animation: flash 1s steps(2, jump-none) infinite; }
+@keyframes flash { 50% { opacity: .15; } }
+@media (prefers-reduced-motion: reduce) { .clock.flash svg { animation: none; outline: 2px solid var(--seg-on); } }
+
+.under { display: grid; grid-template-columns: 1fr auto; gap: 14px; align-items: center; }
+.modeinfo { min-width: 0; }
+.modeinfo .name { font-family: var(--font-display); font-weight: 600; font-size: 1.25rem; }
+.modeinfo .desc { color: var(--muted); font-size: .92rem; }
+.modeinfo .extra { font-family: var(--font-mono); font-size: .82rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.keys { display: flex; gap: 14px; }
+.key { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.key button {
+  width: 68px; height: 68px; border-radius: 50%; border: 0; cursor: pointer;
+  background: radial-gradient(circle at 40% 35%, var(--btn-cap-hi), var(--btn-cap));
+  color: var(--btn-ink); font-family: var(--font-display); font-weight: 700; font-size: .78rem; letter-spacing: .08em;
+  box-shadow: 0 3px 0 rgba(0,0,0,.35), 0 6px 14px rgba(0,0,0,.18);
+  touch-action: manipulation; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+}
+.key button:active, .key button.held { transform: translateY(2px); box-shadow: 0 1px 0 rgba(0,0,0,.35); }
+.key button:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.key span { font-size: .72rem; color: var(--muted); text-align: center; line-height: 1.2; }
+@media (max-width: 520px) { .under { grid-template-columns: 1fr; } .keys { justify-content: center; } }
+
+/* Panels */
+.panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); gap: 14px; align-items: start; }
+details { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 0 14px; min-width: 0; }
+summary { cursor: pointer; padding: 12px 0; font-family: var(--font-display); font-weight: 600; font-size: 1.05rem; list-style-position: outside; }
+details[open] summary { border-bottom: 1px solid var(--line); margin-bottom: 10px; }
+.body { display: flex; flex-direction: column; gap: 12px; padding-bottom: 14px; }
+.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+label { font-size: .9rem; }
+.field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.field > span { font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+input, select { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px; max-width: 100%; }
+input:focus-visible, select:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.btn { font: inherit; font-weight: 600; font-size: .88rem; cursor: pointer; border-radius: 6px; padding: 7px 12px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--fg); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.hint { font-size: .85rem; color: var(--muted); margin: 0; }
+.example { font-size: .8rem; font-weight: 600; color: var(--accent); }
+.modes { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px 12px; }
+.modes label { display: flex; gap: 6px; align-items: center; }
+.chip { display: inline-block; font-size: .78rem; font-weight: 600; padding: 2px 8px; border-radius: 99px; border: 1px solid var(--line); }
+.chip.ok { border-color: #2f8f4e; color: #2f8f4e; }
+.chip.bad { border-color: var(--accent); color: var(--accent); }
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: .85rem; }
+.notes p { margin: 0; max-width: 65ch; }
+kbd { font-family: var(--font-mono); font-size: .8em; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Precision Clock Simulator</h1>
+    <p>Try the display modes planned for the GPS wall clock: ten 0.56&Prime; digits on five dual displays, two buttons, HH:MM:SS.mmmm. Time comes from this device's clock, not GPS.</p>
+  </header>
+
+  <div class="banner" id="simBanner" hidden>
+    <span id="simBannerText">Simulated time</span>
+    <button class="btn" id="resetTime" type="button">Back to real time</button>
+  </div>
+
+  <div class="clock" id="clock" role="img" aria-label="Clock display">
+    <svg id="disp" viewBox="0 0 668 92" aria-hidden="true"></svg>
+  </div>
+
+  <div class="under">
+    <div class="modeinfo" aria-live="polite">
+      <div class="name" id="modeName">Local time</div>
+      <div class="desc" id="modeDesc"></div>
+      <div class="extra" id="modeExtra"></div>
+    </div>
+    <div class="keys">
+      <div class="key"><button id="btnMode" type="button" aria-label="Mode button">MODE</button><span>tap: next<br>hold: previous</span></div>
+      <div class="key"><button id="btnBright" type="button" aria-label="Brightness button">BRIGHT</button><span>tap: brightness<br>hold: colons</span></div>
+    </div>
+  </div>
+
+  <div class="panels">
+    <details open>
+      <summary>Seconds alive</summary>
+      <div class="body">
+        <p class="example" id="birthExample">Example birth time below. Replace it with yours (it stays on this device).</p>
+        <div class="row">
+          <label class="field"><span>Birth date and time</span><input id="birthLocal" type="datetime-local" step="60"></label>
+          <label class="field"><span>UTC offset then</span><select id="birthOffset"></select></label>
+        </div>
+        <p class="hint">Use the offset in force where you were born: New York is −04:00 in summer (DST) and −05:00 in winter.</p>
+        <div class="row">
+          <label class="field"><span>Count</span>
+            <select id="countType">
+              <option value="si">True seconds (with leap seconds)</option>
+              <option value="unix">Unix-style (no leap seconds)</option>
+            </select></label>
+        </div>
+        <div class="mono" id="birthSummary"></div>
+      </div>
+    </details>
+
+    <details>
+      <summary>GPS simulation</summary>
+      <div class="body">
+        <div class="row">Status: <span class="chip ok" id="gpsChip">Locked</span> <span class="mono" id="gpsDetail"></span></div>
+        <div class="row">
+          <button class="btn" id="gpsLose" type="button">Lose fix</button>
+          <button class="btn" id="gpsRestore" type="button">Restore fix</button>
+          <button class="btn" id="gpsCold" type="button">Cold start</button>
+        </div>
+        <div class="row">
+          <label class="field"><span>Time since fix lost runs</span>
+            <select id="gpsSpeed">
+              <option value="1">at real speed</option>
+              <option value="60">60× faster</option>
+              <option value="600">600× faster</option>
+            </select></label>
+        </div>
+        <p class="hint">After losing the fix, digits blank one by one: 0.1&nbsp;ms after 30&nbsp;s, 1&nbsp;ms after 5&nbsp;min, 10&nbsp;ms after 50&nbsp;min, 100&nbsp;ms after 8&nbsp;h 20&nbsp;min. These are starting values for the real clock, to be tuned once the oscillator's drift is measured.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary>Time travel</summary>
+      <div class="body">
+        <p class="hint">Jump to 10 seconds before an interesting moment to watch the display roll over.</p>
+        <div class="row">
+          <button class="btn" data-jump="dstStart" type="button">DST starts</button>
+          <button class="btn" data-jump="dstEnd" type="button">DST ends</button>
+          <button class="btn" data-jump="newYear" type="button">New Year</button>
+          <button class="btn" data-jump="milestone" type="button">Next milestone</button>
+          <button class="btn" data-jump="billion" type="button">1,000,000,000 s alive</button>
+        </div>
+      </div>
+    </details>
+
+    <details>
+      <summary>Countdown</summary>
+      <div class="body">
+        <label class="field"><span>Count down to (New York time)</span><input id="cdTarget" type="datetime-local" step="1"></label>
+        <p class="hint">Under 100 hours it shows HH:MM:SS.mmmm; further out it shows days with a fraction.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary>Display options</summary>
+      <div class="body">
+        <div class="row">
+          <label class="field"><span>Clock format</span>
+            <select id="hourFmt"><option value="24">24 hour</option><option value="12">12 hour (PM dot on first digit)</option></select></label>
+          <label class="field"><span>Colons</span>
+            <select id="colonStyle"><option value="solid">Solid</option><option value="blink">Blink each second</option><option value="off">Off</option></select></label>
+        </div>
+        <div class="field"><span>Modes the MODE button steps through</span><div class="modes" id="modeChecks"></div></div>
+        <p class="hint">Keyboard: <kbd>M</kbd> next mode, <kbd>Shift</kbd>+<kbd>M</kbd> previous, <kbd>B</kbd> brightness.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary>What this shows, and what it can't</summary>
+      <div class="body notes">
+        <p>The modes, layouts, button actions, DST rule and leap-second counting match <span class="mono">docs/firmware-features.md</span>. The real clock will run the same rules in C.</p>
+        <p>Your phone's clock is set over the network and can be tens of milliseconds off. The real clock follows the GPS pulse. A screen also redraws only 60–120 times a second, so the last two digits look like a blur, as they will to your eye on the real clock. A camera at a fast shutter speed can read them.</p>
+        <p>Hardware quirk you can see here: digits 2 and 4 have no decimal point, because their DP outputs drive the colons. When a number's decimal point would land there (for example 1234.5 days), the firmware shifts the number one place right.</p>
+      </div>
+    </details>
+  </div>
+</div>
+
+<script>
+(() => {
+  "use strict";
+  // ---------- 7-segment geometry ----------
+  const SEG_BITS = { a: 1, b: 2, c: 4, d: 8, e: 16, f: 32, g: 64 };
+  const FONT = {
+    "0": 63, "1": 6, "2": 91, "3": 79, "4": 102, "5": 109, "6": 125, "7": 7, "8": 127, "9": 111,
+    "A": 119, "b": 124, "C": 57, "c": 88, "d": 94, "E": 121, "F": 113, "G": 61, "H": 118, "h": 116,
+    "I": 48, "J": 30, "L": 56, "n": 84, "o": 92, "O": 63, "P": 115, "r": 80, "S": 109, "t": 120,
+    "U": 62, "u": 28, "y": 110, "-": 64, "_": 8, " ": 0
+  };
+  const W = 40, H = 72, T = 7.5, GAP = 1.4;
+  const DIGIT_PITCH = 52, HOUSING_W = 120, HOUSING_H = 92, PAD_X = 12, PAD_Y = 10;
+  const GAPS = [24, 24, 10, 10]; // between housings: colon, colon, plain, plain
+
+  function hseg(x1, x2, y) {
+    const h = T / 2;
+    return `${x1},${y} ${x1 + h},${y - h} ${x2 - h},${y - h} ${x2},${y} ${x2 - h},${y + h} ${x1 + h},${y + h}`;
+  }
+  function vseg(x, y1, y2) {
+    const h = T / 2;
+    return `${x},${y1} ${x + h},${y1 + h} ${x + h},${y2 - h} ${x},${y2} ${x - h},${y2 - h} ${x - h},${y1 + h}`;
+  }
+  const xl = T / 2, xr = W - T / 2, yt = T / 2, yb = H - T / 2, ym = H / 2;
+  const SEG_POLYS = {
+    a: hseg(xl + GAP, xr - GAP, yt), g: hseg(xl + GAP, xr - GAP, ym), d: hseg(xl + GAP, xr - GAP, yb),
+    f: vseg(xl, yt + GAP, ym - GAP), b: vseg(xr, yt + GAP, ym - GAP),
+    e: vseg(xl, ym + GAP, yb - GAP), c: vseg(xr, ym + GAP, yb - GAP)
+  };
+
+  const svg = document.getElementById("disp");
+  const NS = "http://www.w3.org/2000/svg";
+  const digits = []; // {segs:{a..g}, dp}
+  const colonDots = [];
+  let x = 0;
+  for (let hgi = 0; hgi < 5; hgi++) {
+    const rect = document.createElementNS(NS, "rect");
+    rect.setAttribute("x", x); rect.setAttribute("y", 0); rect.setAttribute("width", HOUSING_W);
+    rect.setAttribute("height", HOUSING_H); rect.setAttribute("rx", 3); rect.setAttribute("class", "housing");
+    svg.appendChild(rect);
+    for (let k = 0; k < 2; k++) {
+      const g = document.createElementNS(NS, "g");
+      const dx = x + PAD_X + 4 + k * DIGIT_PITCH;
+      g.setAttribute("transform", `translate(${dx} ${PAD_Y}) skewX(-6) translate(4 0)`);
+      const segs = {};
+      for (const s of "abcdefg") {
+        const p = document.createElementNS(NS, "polygon");
+        p.setAttribute("points", SEG_POLYS[s]); p.setAttribute("class", "seg");
+        g.appendChild(p); segs[s] = p;
+      }
+      const dp = document.createElementNS(NS, "circle");
+      dp.setAttribute("cx", W + 5); dp.setAttribute("cy", yb); dp.setAttribute("r", 4); dp.setAttribute("class", "seg");
+      g.appendChild(dp);
+      svg.appendChild(g);
+      digits.push({ segs, dp, mask: -1, dpOn: null });
+    }
+    x += HOUSING_W;
+    if (hgi < 4) {
+      const gap = GAPS[hgi];
+      if (hgi < 2) {
+        for (const fy of [0.36, 0.66]) {
+          const c = document.createElementNS(NS, "circle");
+          c.setAttribute("cx", x + gap / 2); c.setAttribute("cy", HOUSING_H * fy); c.setAttribute("r", 4.5);
+          c.setAttribute("class", "seg"); svg.appendChild(c); colonDots.push(c);
+        }
+      }
+      x += gap;
+    }
+  }
+  svg.setAttribute("viewBox", `0 0 ${x} ${HOUSING_H}`);
+  let colonState = null;
+
+  function render(frame) {
+    for (let i = 0; i < 10; i++) {
+      const d = digits[i];
+      const ch = frame.chars[i] ?? " ";
+      const mask = FONT[ch] ?? FONT["-"];
+      if (mask !== d.mask) {
+        for (const s of "abcdefg") d.segs[s].classList.toggle("on", !!(mask & SEG_BITS[s]));
+        d.mask = mask;
+      }
+      // digits 2 and 4 (index 1, 3): DP drives the colons on the real board
+      const dpOn = i !== 1 && i !== 3 && !!frame.dps[i];
+      if (dpOn !== d.dpOn) { d.dp.classList.toggle("on", dpOn); d.dpOn = dpOn; }
+    }
+    if (frame.colon !== colonState) {
+      for (const c of colonDots) c.classList.toggle("on", frame.colon);
+      colonState = frame.colon;
+    }
+  }
+
+  // ---------- Time helpers ----------
+  const DAY = 86400000;
+  let simOffset = 0; // ms added to real time ("time travel")
+  const realNow = () => performance.timeOrigin + performance.now();
+  const now = () => realNow() + simOffset;
+
+  // US DST rule (since 2007), the one the firmware will use for America/New_York
+  function nthSunday(year, month, n) { // month 0-based, returns day of month
+    const first = new Date(Date.UTC(year, month, 1)).getUTCDay();
+    return 1 + ((7 - first) % 7) + 7 * (n - 1);
+  }
+  function dstStartUTC(y) { return Date.UTC(y, 2, nthSunday(y, 2, 2), 7); }   // 02:00 EST = 07:00 UTC
+  function dstEndUTC(y) { return Date.UTC(y, 10, nthSunday(y, 10, 1), 6); }   // 02:00 EDT = 06:00 UTC
+  function nyOffsetMs(utc) {
+    const y = new Date(utc).getUTCFullYear();
+    return (utc >= dstStartUTC(y) && utc < dstEndUTC(y)) ? -4 * 3600000 : -5 * 3600000;
+  }
+  function nyLocalToUTC(y, mo, d, h, mi, s) {
+    const base = Date.UTC(y, mo, d, h, mi, s);
+    const asEst = base + 5 * 3600000;
+    return nyOffsetMs(asEst - 3600000) === -4 * 3600000 ? base + 4 * 3600000 : asEst;
+  }
+
+  // Leap seconds: UTC instants just after each inserted second (00:00:00 the next day)
+  const LEAPS = [
+    "1972-07-01", "1973-01-01", "1974-01-01", "1975-01-01", "1976-01-01", "1977-01-01", "1978-01-01",
+    "1979-01-01", "1980-01-01", "1981-07-01", "1982-07-01", "1983-07-01", "1985-07-01", "1988-01-01",
+    "1990-01-01", "1991-01-01", "1992-07-01", "1993-07-01", "1994-07-01", "1996-01-01", "1997-07-01",
+    "1999-01-01", "2006-01-01", "2009-01-01", "2012-07-01", "2015-07-01", "2017-01-01"
+  ].map(s => Date.parse(s + "T00:00:00Z"));
+  function leapsBetween(a, b) { return LEAPS.filter(t => t > a && t <= b).length; }
+
+  const pad = (n, w) => String(n).padStart(w, "0");
+  const fmtInt = n => Math.round(n).toLocaleString("en-US");
+
+  // Number with a decimal point, filling 10 digits. DP can't sit on digit 2 or 4.
+  function fixedDP(value) {
+    if (!isFinite(value)) return blankFrame("-");
+    const neg = value < 0; value = Math.abs(value);
+    let ip = String(Math.floor(value));
+    let lead = neg ? 1 : 0;
+    let pos = lead + ip.length - 1;
+    if (pos === 1 || pos === 3) { lead += 1; pos += 1; }
+    const fracDigits = Math.max(0, 9 - pos);
+    if (pos > 9) return { chars: ip.slice(-10).split(""), dps: [], colon: false };
+    const frac = fracDigits ? String(Math.floor((value % 1) * 10 ** fracDigits)).padStart(fracDigits, "0") : "";
+    const s = (neg ? "-" : "").padStart(lead, " ") + ip + frac;
+    const dps = []; dps[pos] = true;
+    return { chars: s.padEnd(10, " ").slice(0, 10).split(""), dps, colon: false };
+  }
+  function textFrame(s, colon = false, dps = []) {
+    return { chars: s.padEnd(10, " ").slice(0, 10).split(""), dps, colon };
+  }
+  function blankFrame(ch) { return textFrame(ch.repeat(10)); }
+
+  // ---------- Settings ----------
+  const DEFAULTS = {
+    mode: "local", bright: 3, colon: "solid", hour: "24",
+    birthLocal: "1990-05-17T14:32", birthOffset: -240, birthIsExample: true, count: "si",
+    cdTarget: null,
+    enabled: null
+  };
+  let S = { ...DEFAULTS };
+  try { const raw = localStorage.getItem("gpsclock-sim-v1"); if (raw) S = { ...DEFAULTS, ...JSON.parse(raw) }; } catch (e) { /* storage unavailable */ }
+  function save() { try { localStorage.setItem("gpsclock-sim-v1", JSON.stringify(S)); } catch (e) { /* ignore */ } }
+
+  const BRIGHT = [0.22, 0.42, 0.68, 1];
+
+  function birthUTC() {
+    const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(S.birthLocal || "");
+    if (!m) return NaN;
+    return Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]) - S.birthOffset * 60000;
+  }
+  function secondsAlive(t) {
+    const b = birthUTC();
+    if (!isFinite(b)) return NaN;
+    const base = Math.floor((t - b) / 1000);
+    return S.count === "si" ? base + (t >= b ? leapsBetween(b, t) : 0) : base;
+  }
+  function defaultCountdown() {
+    const y = new Date(now() + nyOffsetMs(now())).getUTCFullYear() + 1;
+    return `${y}-01-01T00:00:00`;
+  }
+  function countdownUTC() {
+    const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/.exec(S.cdTarget || defaultCountdown());
+    if (!m) return NaN;
+    return nyLocalToUTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0));
+  }
+
+  // ---------- GPS simulation ----------
+  const gps = { state: "locked", since: realNow(), speed: 1, coldFor: 25000 };
+  function precisionLevel() {
+    // 4 = .mmmm ... 0 = no fraction. Returns -1 while waiting for the first fix.
+    if (gps.state === "locked") return 4;
+    const el = (realNow() - gps.since) / 1000;
+    if (gps.state === "cold") return el * gps.speed >= gps.coldFor / 1000 ? (gpsLock(), 4) : -1;
+    const lost = el * gps.speed;
+    if (lost < 30) return 4;
+    if (lost < 300) return 3;
+    if (lost < 3000) return 2;
+    if (lost < 30000) return 1;
+    return 0;
+  }
+  function gpsLock() { gps.state = "locked"; gps.since = realNow(); }
+  function lostSeconds() { return gps.state === "lost" ? (realNow() - gps.since) / 1000 * gps.speed : 0; }
+
+  // ---------- Modes ----------
+  function timeFrame(utc, offset, opts = {}) {
+    const lvl = precisionLevel();
+    if (lvl < 0) return textFrame("----------", colonOn(utc));
+    const local = new Date(utc + offset);
+    let h = local.getUTCHours();
+    const pm = h >= 12;
+    let hs;
+    if (S.hour === "12" && !opts.utc) { h = h % 12 || 12; hs = String(h).padStart(2, " "); }
+    else hs = pad(h, 2);
+    const frac = pad(Math.floor((((utc % 1000) + 1000) % 1000) * 10), 4);
+    const shown = frac.slice(0, lvl) + "-".repeat(4 - lvl);
+    const s = hs + pad(local.getUTCMinutes(), 2) + pad(local.getUTCSeconds(), 2) + shown;
+    const dps = [];
+    if (lvl > 0) dps[5] = true;
+    if (S.hour === "12" && !opts.utc && pm) dps[0] = true;
+    if (opts.utc) dps[9] = true;
+    return { chars: s.split(""), dps, colon: colonOn(utc) };
+  }
+  function colonOn(utc) {
+    if (S.colon === "off") return false;
+    if (S.colon === "blink") return (((utc % 1000) + 1000) % 1000) < 500;
+    return true;
+  }
+  function isoWeek(local) {
+    const d = new Date(Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate()));
+    const wd = d.getUTCDay() || 7;            // Monday = 1 ... Sunday = 7
+    d.setUTCDate(d.getUTCDate() + 4 - wd);    // Thursday of this week decides the year
+    const y = d.getUTCFullYear();
+    const w = Math.ceil(((d - Date.UTC(y, 0, 1)) / DAY + 1) / 7);
+    return { y, w, wd };
+  }
+  function nextMilestone(sec) { return (Math.floor(sec / 1e8) + 1) * 1e8; }
+
+  let statusPage = 0;
+  const MODES = [
+    { id: "local", name: "Local time", desc: "New York time with the US daylight-saving rule. Precision digits blank when the GPS fix is lost.",
+      frame: t => timeFrame(t, nyOffsetMs(t)),
+      extra: t => (nyOffsetMs(t) === -4 * 3600000 ? "EDT, UTC−04:00" : "EST, UTC−05:00") },
+    { id: "utc", name: "UTC", desc: "Coordinated Universal Time. The dot on the last digit marks UTC.",
+      frame: t => timeFrame(t, 0, { utc: true }), extra: () => "UTC" },
+    { id: "unix", name: "Unix time", desc: "Seconds since 1970-01-01 UTC, ignoring leap seconds. Fills all ten digits until 2286.",
+      frame: t => textFrame(String(Math.floor(t / 1000)).padStart(10, " ")), extra: () => "" },
+    { id: "date", name: "Date", desc: "ISO date, New York.",
+      frame: t => { const l = new Date(t + nyOffsetMs(t)); return textFrame(`${l.getUTCFullYear()}-${pad(l.getUTCMonth() + 1, 2)}-${pad(l.getUTCDate(), 2)}`); },
+      extra: () => "" },
+    { id: "doy", name: "Day of year", desc: "Year and ordinal day, New York.",
+      frame: t => { const l = new Date(t + nyOffsetMs(t)); const doy = Math.floor((Date.UTC(l.getUTCFullYear(), l.getUTCMonth(), l.getUTCDate()) - Date.UTC(l.getUTCFullYear(), 0, 1)) / DAY) + 1;
+        return textFrame(`${l.getUTCFullYear()}-${pad(doy, 3)}`); }, extra: () => "" },
+    { id: "week", name: "ISO week", desc: "Year, week and weekday (1 = Monday). The W can't be drawn on seven segments, so it's left out.",
+      frame: t => { const w = isoWeek(new Date(t + nyOffsetMs(t))); return textFrame(`${w.y}-${pad(w.w, 2)}-${w.wd}`); }, extra: () => "" },
+    { id: "mjd", name: "Modified Julian Date", desc: "Days since 1858-11-17 UTC, with a fraction.",
+      frame: t => fixedDP(t / DAY + 40587), extra: () => "" },
+    { id: "alive", name: "Seconds alive", desc: "Seconds since your birth time.",
+      frame: t => { const s = secondsAlive(t); if (!isFinite(s)) return blankFrame("-");
+        const str = String(Math.abs(s)); if (str.length > (s < 0 ? 9 : 10)) return blankFrame("-");
+        return textFrame(((s < 0 ? "-" : "") + str).padStart(10, " ")); },
+      extra: t => { const s = secondsAlive(t); if (!isFinite(s)) return "Set a birth time below";
+        const b = birthUTC(); const l = leapsBetween(b, t);
+        return S.count === "si" ? `includes ${l} leap second${l === 1 ? "" : "s"}` : "Unix-style count, no leap seconds"; } },
+    { id: "days", name: "Days alive", desc: "Days since your birth time, with a fraction.",
+      frame: t => fixedDP((t - birthUTC()) / DAY), extra: () => "" },
+    { id: "milestone", name: "Next milestone", desc: "Seconds until the next round 100 million seconds alive. The display flashes for a minute when you reach one.",
+      frame: t => { const s = secondsAlive(t); if (!isFinite(s)) return blankFrame("-");
+        const rem = nextMilestone(s) - s; return textFrame("t-" + String(rem).padStart(8, " ")); },
+      extra: t => { const s = secondsAlive(t); if (!isFinite(s)) return ""; const m = nextMilestone(s);
+        const when = new Date(t + (m - s) * 1000); return `${fmtInt(m)} s on ${when.toISOString().slice(0, 10)}`; } },
+    { id: "countdown", name: "Countdown", desc: "Time left to the target set below.",
+      frame: t => { const target = countdownUTC(); const rem = target - t;
+        if (!isFinite(rem)) return blankFrame("-");
+        if (rem <= 0) return textFrame("0000000000", colonOn(t), [, , , , , true]);
+        if (rem < 100 * 3600000) {
+          const h = Math.floor(rem / 3600000), m = Math.floor(rem / 60000) % 60, s = Math.floor(rem / 1000) % 60;
+          const f = pad(Math.floor((rem % 1000) * 10), 4);
+          return { chars: (pad(h, 2) + pad(m, 2) + pad(s, 2) + f).split(""), dps: [, , , , , true], colon: colonOn(t) };
+        }
+        return fixedDP(rem / DAY); },
+      extra: t => { const r = countdownUTC() - t; return isFinite(r) ? (r > 100 * 3600000 ? "days remaining" : "hours : minutes : seconds") : ""; } },
+    { id: "status", name: "Status", desc: "Cycles every 2 seconds: satellites in view, measured oscillator error (ppm), seconds since the last PPS pulse. Values here are made up.",
+      frame: t => { statusPage = Math.floor(realNow() / 2000) % 3;
+        const sats = gps.state === "cold" ? 0 : 9;
+        if (statusPage === 0) return textFrame("SAt" + String(sats).padStart(7, " "));
+        if (statusPage === 1) return textFrame("OSC" + " -0.214".padStart(7, " ").replace(".", ""), false, [, , , , , true]);
+        const last = gps.state === "locked" ? (((t % 1000) + 1000) % 1000) / 1000 : lostSeconds();
+        const v = last.toFixed(1); return textFrame("LASt" + v.replace(".", "").padStart(6, " "), false, [, , , , , , , , true]); },
+      extra: () => ["satellites", "oscillator ppm", "seconds since last PPS"][statusPage] },
+    { id: "test", name: "Display test", desc: "Every segment and colon on, at reduced brightness to stay inside the power budget.",
+      frame: () => ({ chars: "8888888888".split(""), dps: Array(10).fill(true), colon: true, dim: true }), extra: () => "" },
+  ];
+  if (!Array.isArray(S.enabled)) S.enabled = MODES.map(m => m.id);
+  if (!MODES.some(m => m.id === S.mode)) S.mode = "local";
+
+  // ---------- UI wiring ----------
+  const $ = id => document.getElementById(id);
+  const clockEl = $("clock");
+
+  function enabledModes() { const e = MODES.filter(m => S.enabled.includes(m.id)); return e.length ? e : [MODES[0]]; }
+  function stepMode(dir) {
+    const list = enabledModes();
+    let i = list.findIndex(m => m.id === S.mode);
+    i = (i + dir + list.length) % list.length;
+    S.mode = list[i].id; save(); showModeInfo();
+  }
+  function stepBright() { S.bright = (S.bright + 1) % BRIGHT.length; save(); }
+  function cycleColon() { const o = ["solid", "blink", "off"]; S.colon = o[(o.indexOf(S.colon) + 1) % o.length]; $("colonStyle").value = S.colon; save(); }
+  function showModeInfo() { const m = MODES.find(m => m.id === S.mode); $("modeName").textContent = m.name; $("modeDesc").textContent = m.desc; }
+
+  let wakeLock = null;
+  async function keepAwake() {
+    try { if (!wakeLock && navigator.wakeLock) { wakeLock = await navigator.wakeLock.request("screen"); wakeLock.addEventListener("release", () => { wakeLock = null; }); } } catch (e) { /* not allowed here */ }
+  }
+
+  function holdButton(el, onTap, onHold) {
+    let timer = null, held = false;
+    const start = e => {
+      e.preventDefault(); held = false; el.classList.add("held");
+      el.setPointerCapture?.(e.pointerId);
+      timer = setTimeout(() => { held = true; onHold(); }, 700);
+      keepAwake();
+    };
+    const end = () => {
+      if (timer === null) return;
+      clearTimeout(timer); timer = null; el.classList.remove("held");
+      if (!held) onTap();
+    };
+    const cancel = () => { clearTimeout(timer); timer = null; el.classList.remove("held"); };
+    el.addEventListener("pointerdown", start);
+    el.addEventListener("pointerup", end);
+    el.addEventListener("pointercancel", cancel);
+    el.addEventListener("contextmenu", e => e.preventDefault());
+    el.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onTap(); } });
+  }
+  holdButton($("btnMode"), () => stepMode(1), () => stepMode(-1));
+  holdButton($("btnBright"), stepBright, cycleColon);
+  document.addEventListener("keydown", e => {
+    if (e.target.closest && e.target.closest("input, select, textarea")) return;
+    if (e.key === "m" || e.key === "M") stepMode(e.shiftKey ? -1 : 1);
+    if (e.key === "b" || e.key === "B") stepBright();
+  });
+
+  // Seconds-alive settings
+  const offSel = $("birthOffset");
+  for (let m = -12 * 60; m <= 14 * 60; m += 30) {
+    const o = document.createElement("option");
+    const sgn = m < 0 ? "−" : "+", a = Math.abs(m);
+    o.value = m; o.textContent = `UTC${sgn}${pad(Math.floor(a / 60), 2)}:${pad(a % 60, 2)}`;
+    offSel.appendChild(o);
+  }
+  $("birthLocal").value = S.birthLocal; offSel.value = String(S.birthOffset); $("countType").value = S.count;
+  function birthChanged() {
+    S.birthLocal = $("birthLocal").value; S.birthOffset = +offSel.value; S.count = $("countType").value;
+    S.birthIsExample = false; save(); updateBirthSummary();
+  }
+  ["birthLocal", "birthOffset", "countType"].forEach(id => $(id).addEventListener("change", birthChanged));
+  function updateBirthSummary() {
+    $("birthExample").hidden = !S.birthIsExample;
+    const b = birthUTC();
+    $("birthSummary").textContent = isFinite(b) ? `In UTC: ${new Date(b).toISOString().slice(0, 16).replace("T", " ")}` : "Enter a date and time.";
+  }
+  updateBirthSummary();
+
+  // Countdown
+  $("cdTarget").value = (S.cdTarget || defaultCountdown()).slice(0, 19);
+  $("cdTarget").addEventListener("change", () => { S.cdTarget = $("cdTarget").value || null; save(); });
+
+  // Display options
+  $("hourFmt").value = S.hour; $("colonStyle").value = S.colon;
+  $("hourFmt").addEventListener("change", () => { S.hour = $("hourFmt").value; save(); });
+  $("colonStyle").addEventListener("change", () => { S.colon = $("colonStyle").value; save(); });
+  const mc = $("modeChecks");
+  for (const m of MODES) {
+    const l = document.createElement("label");
+    const cb = document.createElement("input"); cb.type = "checkbox"; cb.id = "en-" + m.id; cb.checked = S.enabled.includes(m.id);
+    cb.addEventListener("change", () => {
+      S.enabled = MODES.filter(mm => $("en-" + mm.id).checked).map(mm => mm.id);
+      if (!S.enabled.includes(S.mode)) { S.mode = enabledModes()[0].id; showModeInfo(); }
+      save();
+    });
+    l.append(cb, document.createTextNode(m.name)); mc.appendChild(l);
+  }
+
+  // GPS controls
+  $("gpsLose").addEventListener("click", () => { gps.state = "lost"; gps.since = realNow(); });
+  $("gpsRestore").addEventListener("click", gpsLock);
+  $("gpsCold").addEventListener("click", () => { gps.state = "cold"; gps.since = realNow(); });
+  $("gpsSpeed").addEventListener("change", () => {
+    // keep the elapsed simulated time continuous when changing speed
+    const sp = +$("gpsSpeed").value; const el = (realNow() - gps.since) * gps.speed;
+    gps.speed = sp; gps.since = realNow() - el / sp;
+  });
+  function fmtDur(s) {
+    if (s < 60) return `${s.toFixed(0)} s`;
+    if (s < 3600) return `${Math.floor(s / 60)} min ${Math.floor(s % 60)} s`;
+    return `${Math.floor(s / 3600)} h ${Math.floor(s / 60) % 60} min`;
+  }
+  function updateGpsUI() {
+    const chip = $("gpsChip"); const lvl = precisionLevel();
+    const labels = ["no fraction shown", ".m---", ".mm--", ".mmm-", ".mmmm"];
+    if (gps.state === "locked") { chip.textContent = "Locked"; chip.className = "chip ok"; $("gpsDetail").textContent = "showing .mmmm"; }
+    else if (gps.state === "cold") { chip.textContent = "Cold start"; chip.className = "chip bad";
+      const left = Math.max(0, gps.coldFor / 1000 - (realNow() - gps.since) / 1000 * gps.speed); $("gpsDetail").textContent = `first fix in ${left.toFixed(0)} s`; }
+    else { chip.textContent = "Fix lost"; chip.className = "chip bad"; $("gpsDetail").textContent = `${fmtDur(lostSeconds())} ago, showing ${labels[lvl]}`; }
+  }
+
+  // Time travel
+  function jumpTo(target) { simOffset = target - 10000 - realNow(); updateBanner(); }
+  document.querySelectorAll("[data-jump]").forEach(b => b.addEventListener("click", () => {
+    const t = now(); const y = new Date(t).getUTCFullYear(); let target;
+    switch (b.dataset.jump) {
+      case "dstStart": target = dstStartUTC(y) > t ? dstStartUTC(y) : dstStartUTC(y + 1); if (S.mode !== "local") { S.mode = "local"; showModeInfo(); } break;
+      case "dstEnd": target = dstEndUTC(y) > t ? dstEndUTC(y) : dstEndUTC(y + 1); if (S.mode !== "local") { S.mode = "local"; showModeInfo(); } break;
+      case "newYear": { const ly = new Date(t + nyOffsetMs(t)).getUTCFullYear(); target = nyLocalToUTC(ly + 1, 0, 1, 0, 0, 0); if (S.mode !== "local") { S.mode = "local"; showModeInfo(); } break; }
+      case "milestone": case "billion": {
+        const s = secondsAlive(t); if (!isFinite(s)) return;
+        const goal = b.dataset.jump === "billion" ? 1e9 : nextMilestone(s);
+        target = t + (goal - s) * 1000 - (((t % 1000) + 1000) % 1000);
+        S.mode = "alive"; showModeInfo(); break; }
+    }
+    if (target) jumpTo(target);
+  }));
+  $("resetTime").addEventListener("click", () => { simOffset = 0; updateBanner(); });
+  function updateBanner() {
+    const on = Math.abs(simOffset) > 1000;
+    $("simBanner").hidden = !on;
+    if (on) {
+      const d = simOffset / DAY;
+      $("simBannerText").textContent = `Simulated time: ${d >= 0 ? "+" : "−"}${fmtInt(Math.abs(d))} days from now (${new Date(now()).toISOString().slice(0, 10)})`;
+    }
+  }
+
+  // ---------- Main loop ----------
+  showModeInfo();
+  let lastInfo = 0;
+  function tick() {
+    const t = now();
+    const mode = MODES.find(m => m.id === S.mode) || MODES[0];
+    const frame = mode.frame(t);
+    const alpha = BRIGHT[S.bright] * (frame.dim ? 0.5 : 1);
+    svg.style.setProperty("--on-alpha", alpha);
+    render(frame);
+    // milestone flash: first minute after each 100 million seconds alive
+    const s = secondsAlive(t);
+    clockEl.classList.toggle("flash", isFinite(s) && s >= 1e8 && s % 1e8 < 60);
+    if (realNow() - lastInfo > 200) {
+      lastInfo = realNow();
+      $("modeExtra").textContent = mode.extra(t);
+      updateGpsUI();
+      if (simOffset) updateBanner();
+    }
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+})();
+</script>
